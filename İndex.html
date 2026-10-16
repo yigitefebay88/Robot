@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bluey - AI Asistan</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #0d1117;
+            font-family: system-ui, -apple-system, sans-serif;
+            color: #f0f6fc;
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+        .ui-layer {
+            position: relative;
+            z-index: 10;
+            pointer-events: none;
+        }
+        .interactive {
+            pointer-events: auto;
+        }
+        .glass-panel {
+            background: rgba(22, 27, 34, 0.75);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+<body class="select-none">
+
+    <!-- 3D Canvas -->
+    <div id="canvas-container"></div>
+
+    <!-- UI Katmanı -->
+    <div class="ui-layer w-full h-screen flex flex-col justify-between p-6">
+        
+        <!-- Üst Başlık ve Durum -->
+        <div class="flex justify-between items-center">
+            <div class="glass-panel px-4 py-2 rounded-xl flex items-center space-x-3 interactive">
+                <div id="status-indicator" class="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></div>
+                <span class="font-bold text-sm tracking-wide">BLUEY AI</span>
+                <span id="status-text" class="text-xs text-gray-400 border-l border-gray-700 pl-3">Hazır</span>
+            </div>
+
+            <div class="glass-panel px-3 py-1.5 rounded-xl flex items-center space-x-2 text-xs text-gray-400 interactive">
+                <span>Sesli Yanıt:</span>
+                <span id="speech-status" class="text-emerald-400 font-semibold">Açık</span>
+            </div>
+        </div>
+
+        <!-- Başlatma / Etkileşim Butonu (Autoplay Kısıtlaması İçin) -->
+        <div id="start-overlay" class="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm z-50 interactive transition-opacity duration-500">
+            <button id="start-btn" class="glass-panel hover:bg-blue-600/30 text-white font-semibold px-8 py-4 rounded-2xl border border-blue-500/50 shadow-lg shadow-blue-500/20 flex items-center space-x-3 transition transform hover:scale-105">
+                <svg class="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <span>Bluey'yi Başlat & Dinle</span>
+            </button>
+        </div>
+
+        <!-- Alt Kontrol Paneli -->
+        <div class="flex flex-col items-center space-y-4 max-w-xl mx-auto w-full interactive">
+            
+            <!-- Konuşma Balonu / Log -->
+            <div id="speech-bubble" class="glass-panel px-6 py-3 rounded-2xl text-center text-sm md:text-base text-blue-100 font-medium shadow-2xl transition-all duration-300 w-full min-h-[50px] flex items-center justify-center">
+                "Merhaba! Ben Bluey, size nasıl yardımcı olabilirim?"
+            </div>
+
+            <!-- Hızlı Butonlar -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-2 w-full">
+                <button onclick="speakText('Sistem durumu gayet iyi! Tüm sensörler aktif ve çalışıyor.')" class="glass-panel hover:bg-white/10 p-2.5 rounded-xl text-xs font-medium text-gray-300 hover:text-white transition">
+                    📊 Durum Kontrolü
+                </button>
+                <button onclick="speakText('Masaüstünüzü tarıyorum... Şimdilik her şey yolunda görünüyor.')" class="glass-panel hover:bg-white/10 p-2.5 rounded-xl text-xs font-medium text-gray-300 hover:text-white transition">
+                    🔍 Masaüstü Tara
+                </button>
+                <button onclick="speakText('Kod yazarken mola vermeyi ve su içmeyi unutmayın!')" class="glass-panel hover:bg-white/10 p-2.5 rounded-xl text-xs font-medium text-gray-300 hover:text-white transition">
+                    💡 İpucu Ver
+                </button>
+                <button onclick="speakText('Şu an konuşma fonksiyonlarım başarıyla test ediliyor!')" class="glass-panel hover:bg-white/10 p-2.5 rounded-xl text-xs font-medium text-gray-300 hover:text-white transition">
+                    🎙️ Test Et
+                </button>
+            </div>
+
+            <!-- Özel Metin Girdisi -->
+            <div class="flex w-full space-x-2">
+                <input id="user-input" type="text" placeholder="Bluey'e bir şeyler söyletin..." class="glass-panel flex-1 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-blue-500 text-white placeholder-gray-500">
+                <button onclick="handleCustomSpeak()" class="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition flex items-center justify-center">
+                    Konuş
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // --- THREE.JS KURULUMU ---
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 0, 8);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        container.appendChild(renderer.domElement);
+
+        // --- IŞIKLANDIRMA ---
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+        dirLight.position.set(5, 8, 5);
+        dirLight.castShadow = true;
+        scene.add(dirLight);
+
+        const pointLight = new THREE.PointLight(0x3b82f6, 1.5, 10);
+        pointLight.position.set(-4, -2, 3);
+        scene.add(pointLight);
+
+        // --- BLUEY KARAKTERİ (3D) ---
+        const characterGroup = new THREE.Group();
+        scene.add(characterGroup);
+
+        // 1. Gövde (Yaban Mersini)
+        const bodyGeo = new THREE.SphereGeometry(1.8, 64, 64);
+        const bodyMat = new THREE.MeshPhysicalMaterial({
+            color: 0x2563eb,
+            roughness: 0.25,
+            metalness: 0.1,
+            clearcoat: 0.8,
+            clearcoatRoughness: 0.1,
+            sheen: 0.5,
+            sheenColor: 0x60a5fa
+        });
+        const body = new THREE.Mesh(bodyGeo, bodyMat);
+        body.castShadow = true;
+        body.receiveShadow = true;
+        characterGroup.add(body);
+
+        // 2. Üst Taç / Yaprak Detayı
+        const crownGeo = new THREE.CylinderGeometry(0.5, 0.1, 0.3, 5);
+        const crownMat = new THREE.MeshStandardMaterial({ color: 0x1d4ed8, roughness: 0.4 });
+        const crown = new THREE.Mesh(crownGeo, crownMat);
+        crown.position.set(0, 1.75, 0);
+        characterGroup.add(crown);
+
+        // 3. Gözler
+        function createEye(x) {
+            const eyeGroup = new THREE.Group();
+
+            // Beyaz kısım
+            const whiteGeo = new THREE.SphereGeometry(0.45, 32, 32);
+            const whiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.1 });
+            const white = new THREE.Mesh(whiteGeo, whiteMat);
+            white.scale.set(1, 1.1, 0.6);
+            eyeGroup.add(white);
+
+            // Göz bebeği
+            const pupilGeo = new THREE.SphereGeometry(0.22, 32, 32);
+            const pupilMat = new THREE.MeshBasicMaterial({ color: 0x0f172a });
+            const pupil = new THREE.Mesh(pupilGeo, pupilMat);
+            pupil.position.set(0, 0, 0.28);
+            pupil.scale.set(1, 1, 0.3);
+            eyeGroup.add(pupil);
+
+            // Parıltı
+            const shineGeo = new THREE.SphereGeometry(0.07, 16, 16);
+            const shineMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            const shine = new THREE.Mesh(shineGeo, shineMat);
+            shine.position.set(0.08, 0.08, 0.38);
+            eyeGroup.add(shine);
+
+            eyeGroup.position.set(x, 0.3, 1.5);
+            return { group: eyeGroup, pupil: pupil };
+        }
+
+        const leftEye = createEye(-0.65);
+        const rightEye = createEye(0.65);
+        characterGroup.add(leftEye.group);
+        characterGroup.add(rightEye.group);
+
+        // 4. Ağız
+        const mouthShape = new THREE.Shape();
+        mouthShape.absarc(0, 0, 0.3, Math.PI, 0, true);
+        const mouthGeo = new THREE.ShapeGeometry(mouthShape);
+        const mouthMat = new THREE.MeshBasicMaterial({ color: 0x0f172a, side: THREE.DoubleSide });
+        const mouth = new THREE.Mesh(mouthGeo, mouthMat);
+        mouth.position.set(0, -0.4, 1.72);
+        mouth.rotation.x = 0.1;
+        characterGroup.add(mouth);
+
+        // --- MOUSE TAKİBİ VEYA DİNAMİK HAREKETLER ---
+        let targetEyeX = 0;
+        let targetEyeY = 0;
+        let mouseX = 0;
+        let mouseY = 0;
+
+        window.addEventListener('mousemove', (e) => {
+            mouseX = (e.clientX / window.innerWidth) * 2 - 1;
+            mouseY = -(e.clientY / window.innerHeight) * 2 + 1;
+
+            targetEyeX = mouseX * 0.12;
+            targetEyeY = mouseY * 0.12;
+        });
+
+        // --- SES VE AĞIZ ANIMASYONU (LIP SYNC) ---
+        let isSpeaking = false;
+        const synth = window.speechSynthesis;
+
+        function speakText(text) {
+            if (!synth) return;
+
+            synth.cancel(); // Önceki konuşmaları durdur
+
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'tr-TR';
+            utterance.rate = 1.0;
+            utterance.pitch = 1.2; // Biraz daha sevimli/yüksek ton
+
+            document.getElementById('speech-bubble').innerText = `"${text}"`;
+            document.getElementById('status-text').innerText = "Konuşuyor...";
+            document.getElementById('status-indicator').className = "w-3 h-3 rounded-full bg-blue-500 animate-ping";
+
+            utterance.onstart = () => {
+                isSpeaking = true;
+            };
+
+            utterance.onend = () => {
+                isSpeaking = false;
+                mouth.scale.set(1, 1, 1);
+                document.getElementById('status-text').innerText = "Hazır";
+                document.getElementById('status-indicator').className = "w-3 h-3 rounded-full bg-emerald-500 animate-pulse";
+            };
+
+            synth.speak(utterance);
+        }
+
+        function handleCustomSpeak() {
+            const input = document.getElementById('user-input');
+            if (input.value.trim() !== "") {
+                speakText(input.value);
+                input.value = "";
+            }
+        }
+
+        // Enter tuşu desteği
+        document.getElementById('user-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') handleCustomSpeak();
+        });
+
+        // BAŞLATMA BUTONU
+        const startBtn = document.getElementById('start-btn');
+        const startOverlay = document.getElementById('start-overlay');
+
+        function initializeApp() {
+            startOverlay.style.opacity = '0';
+            setTimeout(() => startOverlay.style.display = 'none', 500);
+            
+            // Açılış Karşılaması
+            setTimeout(() => {
+                speakText("Merhaba! Ben Bluey, size nasıl yardımcı olabilirim?");
+            }, 300);
+        }
+
+        startBtn.addEventListener('click', initializeApp);
+
+        // --- ANIMATION LOOP ---
+        let clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const elapsedTime = clock.getElapsedTime();
+
+            // Yüzme / Nefes alma efekti
+            characterGroup.position.y = Math.sin(elapsedTime * 1.5) * 0.1;
+            characterGroup.rotation.y = THREE.MathUtils.lerp(characterGroup.rotation.y, mouseX * 0.2, 0.05);
+            characterGroup.rotation.x = THREE.MathUtils.lerp(characterGroup.rotation.x, -mouseY * 0.2, 0.05);
+
+            // Göz bebeklerinin takibi
+            leftEye.pupil.position.x = THREE.MathUtils.lerp(leftEye.pupil.position.x, targetEyeX, 0.1);
+            leftEye.pupil.position.y = THREE.MathUtils.lerp(leftEye.pupil.position.y, targetEyeY, 0.1);
+            rightEye.pupil.position.x = THREE.MathUtils.lerp(rightEye.pupil.position.x, targetEyeX, 0.1);
+            rightEye.pupil.position.y = THREE.MathUtils.lerp(rightEye.pupil.position.y, targetEyeY, 0.1);
+
+            // Konuşma Ağız Hareketi (Lip Sync Simülasyonu)
+            if (isSpeaking) {
+                const mouthScaleY = 1 + Math.abs(Math.sin(elapsedTime * 18)) * 1.8;
+                const mouthScaleX = 1 + Math.cos(elapsedTime * 12) * 0.3;
+                mouth.scale.set(mouthScaleX, mouthScaleY, 1);
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // RESIZE HANDLER
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>
